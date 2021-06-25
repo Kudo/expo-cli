@@ -1,0 +1,57 @@
+{
+  "name": "expo-migrate",
+  "version": "0.0.1",
+  "description": "A script to migrate existing project to adopt Expo ecosystem",
+  "main": "build/index.js",
+  "scripts": {
+    "watch": "tsc --watch --preserveWatchOutput",
+    "build": "tsc",
+    "prepare": "yarn run clean && yarn build",
+    "clean": "rimraf build ./tsconfig.tsbuildinfo",
+    "lint": "eslint .",
+    "test": "jest"
+  },
+  "bin": {
+    "expo-migrate": "./bin/migrate.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/expo/expo-cli.git",
+    "directory": "packages/expo-migrate"
+  },
+  "keywords": [
+    "expo",
+    "react-native",
+    "react"
+  ],
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/expo/expo-cli/issues"
+  },
+  "homepage": "https://github.com/expo/expo-cli/tree/master/packages/expo-migrate#readme",
+  "files": [
+    "build",
+    "!*/__tests__/*"
+  ],
+  "dependencies": {
+    "@expo/config-plugins": "^3.0.1",
+    "@expo/json-file": "^8.2.30",
+    "@expo/spawn-async": "^1.5.0",
+    "chalk": "^4.0.0",
+    "fs-extra": "^9.0.0",
+    "progress": "^2.0.3",
+    "prompts": "^2.3.2",
+    "resolve-from": "^5.0.0",
+    "semver": "^5.3.0",
+    "tempy": "^0.7.1",
+    "which": "^2.0.2"
+  },
+  "devDependencies": {
+    "@types/prompts": "^2.0.6",
+    "@types/which": "^2.0.0",
+    "rimraf": "^3.0.2"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -1,0 +1,740 @@
+diff --git a/android/app/build.gradle b/android/app/build.gradle
+index 9b0222c..5da4e9d 100644
+--- a/android/app/build.gradle
++++ b/android/app/build.gradle
+@@ -78,10 +78,13 @@ import com.android.build.OutputFile
+  */
+ 
+ project.ext.react = [
+-    enableHermes: false,  // clean and rebuild if changing
++    enableHermes: (findProperty('expo.jsEngine') ?: "jsc") == "hermes",
+ ]
+ 
++apply from: '../../node_modules/react-native-unimodules/gradle.groovy'
+ apply from: "../../node_modules/react-native/react.gradle"
++apply from: "../../node_modules/expo-constants/scripts/get-app-config-android.gradle"
++apply from: "../../node_modules/expo-updates/scripts/create-manifest-android.gradle"
+ 
+ /**
+  * Set this to true to create two separate APKs instead of one:
+@@ -200,6 +203,8 @@ dependencies {
+         exclude group:'com.facebook.flipper'
+     }
+ 
++    addUnimodulesDependencies()
++
+     if (enableHermes) {
+         def hermesPath = "../../node_modules/hermes-engine/android/";
+         debugImplementation files(hermesPath + "hermes-debug.aar")
+diff --git a/android/app/src/main/AndroidManifest.xml b/android/app/src/main/AndroidManifest.xml
+index 30724f4..a4baf81 100644
+--- a/android/app/src/main/AndroidManifest.xml
++++ b/android/app/src/main/AndroidManifest.xml
+@@ -3,6 +3,16 @@
+ 
+     <uses-permission android:name="android.permission.INTERNET" />
+ 
++    <!-- OPTIONAL PERMISSIONS, REMOVE WHATEVER YOU DO NOT NEED -->
++    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
++    <uses-permission android:name="android.permission.READ_PHONE_STATE"/>
++    <uses-permission android:name="android.permission.VIBRATE"/>
++    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
++    <!-- These require runtime permissions on M -->
++    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
++    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
++    <!-- END OPTIONAL PERMISSIONS -->
++
+     <application
+       android:name=".MainApplication"
+       android:label="@string/app_name"
+@@ -10,11 +20,14 @@
+       android:roundIcon="@mipmap/ic_launcher_round"
+       android:allowBackup="false"
+       android:theme="@style/AppTheme">
++     <meta-data android:name="expo.modules.updates.EXPO_UPDATE_URL" android:value="YOUR-APP-URL-HERE"/>
++     <meta-data android:name="expo.modules.updates.EXPO_SDK_VERSION" android:value="YOUR-APP-SDK-VERSION-HERE"/>
+       <activity
+         android:name=".MainActivity"
+         android:label="@string/app_name"
+         android:configChanges="keyboard|keyboardHidden|orientation|screenSize|uiMode"
+         android:launchMode="singleTask"
++        android:theme="@style/Theme.App.SplashScreen"
+         android:windowSoftInputMode="adjustResize">
+         <intent-filter>
+             <action android:name="android.intent.action.MAIN" />
+diff --git a/android/app/src/main/java/com/helloworld/MainActivity.java b/android/app/src/main/java/com/helloworld/MainActivity.java
+index dc372d7..6163e3a 100644
+--- a/android/app/src/main/java/com/helloworld/MainActivity.java
++++ b/android/app/src/main/java/com/helloworld/MainActivity.java
+@@ -1,15 +1,35 @@
+ package com.helloworld;
+ 
++import android.os.Bundle;
++
+ import com.facebook.react.ReactActivity;
++import com.facebook.react.ReactActivityDelegate;
++import com.facebook.react.ReactRootView;
++
++import expo.modules.splashscreen.singletons.SplashScreen;
++import expo.modules.splashscreen.SplashScreenImageResizeMode;
+ 
+ public class MainActivity extends ReactActivity {
+ 
++  @Override
++  protected void onCreate(Bundle savedInstanceState) {
++    // Set the theme to AppTheme BEFORE onCreate to support
++    // coloring the background, status bar, and navigation bar.
++    // This is required for expo-splash-screen.
++    setTheme(R.style.AppTheme);
++    super.onCreate(null);
++    // SplashScreen.show(...) has to be called after super.onCreate(...)
++    // Below line is handled by '@expo/configure-splash-screen' command and it's discouraged to modify it manually
++    SplashScreen.show(this, SplashScreenImageResizeMode.CONTAIN, ReactRootView.class, false);
++  }
++
++
+   /**
+    * Returns the name of the main component registered from JavaScript. This is used to schedule
+    * rendering of the component.
+    */
+   @Override
+   protected String getMainComponentName() {
+-    return "HelloWorld";
++    return "main";
+   }
+ }
+diff --git a/android/app/src/main/java/com/helloworld/MainApplication.java b/android/app/src/main/java/com/helloworld/MainApplication.java
+index 98f8bc8..49cbe4e 100644
+--- a/android/app/src/main/java/com/helloworld/MainApplication.java
++++ b/android/app/src/main/java/com/helloworld/MainApplication.java
+@@ -2,16 +2,33 @@ package com.helloworld;
+ 
+ import android.app.Application;
+ import android.content.Context;
++import android.net.Uri;
++
+ import com.facebook.react.PackageList;
+ import com.facebook.react.ReactApplication;
+ import com.facebook.react.ReactInstanceManager;
+ import com.facebook.react.ReactNativeHost;
+ import com.facebook.react.ReactPackage;
++import com.facebook.react.shell.MainReactPackage;
+ import com.facebook.soloader.SoLoader;
++import com.helloworld.generated.BasePackageList;
++
++import org.unimodules.adapters.react.ReactAdapterPackage;
++import org.unimodules.adapters.react.ModuleRegistryAdapter;
++import org.unimodules.adapters.react.ReactModuleRegistryProvider;
++import org.unimodules.core.interfaces.Package;
++import org.unimodules.core.interfaces.SingletonModule;
++import expo.modules.updates.UpdatesController;
++
+ import java.lang.reflect.InvocationTargetException;
+ import java.util.List;
++import java.util.Arrays;
++import javax.annotation.Nullable;
+ 
+ public class MainApplication extends Application implements ReactApplication {
++  private final ReactModuleRegistryProvider mModuleRegistryProvider = new ReactModuleRegistryProvider(
++    new BasePackageList().getPackageList()
++  );
+ 
+   private final ReactNativeHost mReactNativeHost =
+       new ReactNativeHost(this) {
+@@ -24,6 +41,7 @@ public class MainApplication extends Application implements ReactApplication {
+         protected List<ReactPackage> getPackages() {
+           @SuppressWarnings("UnnecessaryLocalVariable")
+           List<ReactPackage> packages = new PackageList(this).getPackages();
++          packages.add(new ModuleRegistryAdapter(mModuleRegistryProvider));
+           // Packages that cannot be autolinked yet can be added manually here, for example:
+           // packages.add(new MyReactNativePackage());
+           return packages;
+@@ -33,6 +51,24 @@ public class MainApplication extends Application implements ReactApplication {
+         protected String getJSMainModuleName() {
+           return "index";
+         }
++
++        @Override
++        protected @Nullable String getJSBundleFile() {
++          if (BuildConfig.DEBUG) {
++            return super.getJSBundleFile();
++          } else {
++            return UpdatesController.getInstance().getLaunchAssetFile();
++          }
++        }
++
++        @Override
++        protected @Nullable String getBundleAssetName() {
++          if (BuildConfig.DEBUG) {
++            return super.getBundleAssetName();
++          } else {
++            return UpdatesController.getInstance().getBundleAssetName();
++          }
++        }
+       };
+ 
+   @Override
+@@ -44,6 +80,11 @@ public class MainApplication extends Application implements ReactApplication {
+   public void onCreate() {
+     super.onCreate();
+     SoLoader.init(this, /* native exopackage */ false);
++
++    if (!BuildConfig.DEBUG) {
++      UpdatesController.initialize(this);
++    }
++
+     initializeFlipper(this, getReactNativeHost().getReactInstanceManager());
+   }
+ 
+diff --git a/android/app/src/main/res/drawable/splashscreen.xml b/android/app/src/main/res/drawable/splashscreen.xml
+new file mode 100644
+index 0000000..9f19c56
+--- /dev/null
++++ b/android/app/src/main/res/drawable/splashscreen.xml
+@@ -0,0 +1,7 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!--
++  This file was created by '@expo/configure-splash-screen' and some of it's content shouldn't be modified by hand
++-->
++<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
++  <item android:drawable="@color/splashscreen_background"/>
++</layer-list>
+diff --git a/android/app/src/main/res/values/colors.xml b/android/app/src/main/res/values/colors.xml
+new file mode 100644
+index 0000000..7e2bd59
+--- /dev/null
++++ b/android/app/src/main/res/values/colors.xml
+@@ -0,0 +1,5 @@
++<?xml version="1.0" encoding="utf-8"?>
++<resources>
++  <!-- Below line is handled by '@expo/configure-splash-screen' command and it's discouraged to modify it manually -->
++  <color name="splashscreen_background">#FFFFFF</color>
++</resources>
+diff --git a/android/app/src/main/res/values/styles.xml b/android/app/src/main/res/values/styles.xml
+index 62fe59f..da40991 100644
+--- a/android/app/src/main/res/values/styles.xml
++++ b/android/app/src/main/res/values/styles.xml
+@@ -5,5 +5,10 @@
+         <!-- Customize your theme here. -->
+         <item name="android:textColor">#000000</item>
+     </style>
++    <style name="Theme.App.SplashScreen" parent="Theme.AppCompat.Light.NoActionBar">
++        <!-- Below line is handled by '@expo/configure-splash-screen' command and it's discouraged to modify it manually -->
++        <item name="android:windowBackground">@drawable/splashscreen</item>
++        <!-- Customize your splash screen theme here -->
++    </style>
+ 
+ </resources>
+diff --git a/android/build.gradle b/android/build.gradle
+index ed5a568..0547dbf 100644
+--- a/android/build.gradle
++++ b/android/build.gradle
+@@ -3,7 +3,7 @@
+ buildscript {
+     ext {
+         buildToolsVersion = "29.0.2"
+-        minSdkVersion = 16
++        minSdkVersion = 21
+         compileSdkVersion = 29
+         targetSdkVersion = 29
+     }
+diff --git a/android/gradle.properties b/android/gradle.properties
+index 3bdbd3d..b5653bc 100644
+--- a/android/gradle.properties
++++ b/android/gradle.properties
+@@ -26,3 +26,7 @@ android.enableJetifier=true
+ 
+ # Version of flipper SDK to use with React Native
+ FLIPPER_VERSION=0.54.0
++
++# The hosted JavaScript engine
++# Supported values: expo.jsEngine = "hermes" | "jsc"
++expo.jsEngine=jsc
+diff --git a/android/settings.gradle b/android/settings.gradle
+index 067eef5..06e214f 100644
+--- a/android/settings.gradle
++++ b/android/settings.gradle
+@@ -1,3 +1,5 @@
+ rootProject.name = 'HelloWorld'
++apply from: '../node_modules/react-native-unimodules/gradle.groovy'
++includeUnimodulesProjects()
+ apply from: file("../node_modules/@react-native-community/cli-platform-android/native_modules.gradle"); applyNativeModulesSettingsGradle(settings)
+ include ':app'
+diff --git a/app.json b/app.json
+index 7200c88..f1f1238 100644
+--- a/app.json
++++ b/app.json
+@@ -1,4 +1,9 @@
+ {
+   "name": "HelloWorld",
+-  "displayName": "HelloWorld"
+-}
+\ No newline at end of file
++  "displayName": "HelloWorld",
++  "expo": {
++    "slug": "HelloWorld",
++    "version": "1.0.0",
++    "assetBundlePatterns": ["**/*"]
++  }
++}
+diff --git a/babel.config.js b/babel.config.js
+index f842b77..fcb3486 100644
+--- a/babel.config.js
++++ b/babel.config.js
+@@ -1,3 +1,3 @@
+ module.exports = {
+-  presets: ['module:metro-react-native-babel-preset'],
++  presets: ['babel-preset-expo'],
+ };
+diff --git a/index.js b/index.js
+index a850d03..f4bf2a2 100644
+--- a/index.js
++++ b/index.js
+@@ -2,8 +2,10 @@
+  * @format
+  */
+ 
+-import {AppRegistry} from 'react-native';
++import { registerRootComponent } from 'expo';
+ import App from './App';
+-import {name as appName} from './app.json';
+ 
+-AppRegistry.registerComponent(appName, () => App);
++// registerRootComponent calls AppRegistry.registerComponent('main', () => App);
++// It also ensures that whether you load the app in Expo Go or in a native build,
++// the environment is set up appropriately
++registerRootComponent(App);
+diff --git a/ios/Podfile b/ios/Podfile
+index aee8e59..584f0ea 100644
+--- a/ios/Podfile
++++ b/ios/Podfile
+@@ -1,9 +1,11 @@
+ require_relative '../node_modules/react-native/scripts/react_native_pods'
++require_relative '../node_modules/react-native-unimodules/cocoapods.rb'
+ require_relative '../node_modules/@react-native-community/cli-platform-ios/native_modules'
+ 
+-platform :ios, '10.0'
++platform :ios, '11.0'
+ 
+ target 'HelloWorld' do
++  use_unimodules!
+   config = use_native_modules!
+ 
+   use_react_native!(:path => config["reactNativePath"])
+diff --git a/ios/HelloWorld.xcodeproj/project.pbxproj b/ios/HelloWorld.xcodeproj/project.pbxproj
+index e6ae329..e222b30 100644
+--- a/ios/HelloWorld.xcodeproj/project.pbxproj
++++ b/ios/HelloWorld.xcodeproj/project.pbxproj
+@@ -17,1 +17,3 @@
+ 		81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */; };
++		83C7A01E2684AFAD00AFF457 /* SplashScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 83C7A01D2684AFAD00AFF457 /* SplashScreen.storyboard */; };
++		83C7A0202684AFBF00AFF457 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = 83C7A01F2684AFBF00AFF457 /* Expo.plist */; };
+@@ -59,1 +61,3 @@
+ 		81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = LaunchScreen.storyboard; path = HelloWorld/LaunchScreen.storyboard; sourceTree = "<group>"; };
++		83C7A01D2684AFAD00AFF457 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = HelloWorld/SplashScreen.storyboard; sourceTree = "<group>"; };
++		83C7A01F2684AFBF00AFF457 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Expo.plist; path = HelloWorld/Supporting/Expo.plist; sourceTree = "<group>"; };
+@@ -125,6 +129,7 @@
+ 		13B07FAE1A68108700A75B9A /* HelloWorld */ = {
+ 			isa = PBXGroup;
+ 			children = (
++				83C7A0222684B02600AFF457 /* Supporting */,
+ 				008F07F21AC5B25A0029DE68 /* main.jsbundle */,
+ 				13B07FAF1A68108700A75B9A /* AppDelegate.h */,
+ 				13B07FB01A68108700A75B9A /* AppDelegate.m */,
+@@ -132,6 +137,7 @@
+ 				13B07FB61A68108700A75B9A /* Info.plist */,
+ 				81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */,
+ 				13B07FB71A68108700A75B9A /* main.m */,
++				83C7A01D2684AFAD00AFF457 /* SplashScreen.storyboard */,
+ 			);
+ 			name = HelloWorld;
+ 			sourceTree = "<group>";
+@@ -172,6 +178,14 @@
+ 			name = Libraries;
+ 			sourceTree = "<group>";
+ 		};
++		83C7A0222684B02600AFF457 /* Supporting */ = {
++			isa = PBXGroup;
++			children = (
++				83C7A01F2684AFBF00AFF457 /* Expo.plist */,
++			);
++			name = Supporting;
++			sourceTree = "<group>";
++		};
+ 		83CBB9F61A601CBA00E9B192 = {
+ 			isa = PBXGroup;
+ 			children = (
+@@ -342,7 +356,9 @@
+ 			isa = PBXResourcesBuildPhase;
+ 			buildActionMask = 2147483647;
+ 			files = (
++				83C7A0202684AFBF00AFF457 /* Expo.plist in Resources */,
+ 				81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */,
++				83C7A01E2684AFAD00AFF457 /* SplashScreen.storyboard in Resources */,
+ 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
+ 			);
+ 			runOnlyForDeploymentPostprocessing = 0;
+@@ -377,7 +393,7 @@
+ 			);
+ 			runOnlyForDeploymentPostprocessing = 0;
+ 			shellPath = /bin/sh;
+-			shellScript = "export NODE_BINARY=node\n../node_modules/react-native/scripts/react-native-xcode.sh";
++			shellScript = "export NODE_BINARY=node\n../node_modules/react-native/scripts/react-native-xcode.sh\n../node_modules/expo-constants/scripts/get-app-config-ios.sh\n../node_modules/expo-updates/scripts/create-manifest-ios.sh\n";
+ 		};
+ 		2D02E4CB1E0B4B27006451C7 /* Bundle React Native Code And Images */ = {
+ 			isa = PBXShellScriptBuildPhase;
+diff --git a/ios/HelloWorld/AppDelegate.h b/ios/HelloWorld/AppDelegate.h
+index ef1de86..eff4f3e 100644
+--- a/ios/HelloWorld/AppDelegate.h
++++ b/ios/HelloWorld/AppDelegate.h
+@@ -1,8 +1,9 @@
++#import <EXUpdates/EXUpdatesAppController.h>
+ #import <React/RCTBridgeDelegate.h>
+ #import <UIKit/UIKit.h>
+ 
+-@interface AppDelegate : UIResponder <UIApplicationDelegate, RCTBridgeDelegate>
++#import <UMCore/UMAppDelegateWrapper.h>
+ 
+-@property (nonatomic, strong) UIWindow *window;
++@interface AppDelegate : UMAppDelegateWrapper <RCTBridgeDelegate, EXUpdatesAppControllerDelegate>
+ 
+ @end
+diff --git a/ios/HelloWorld/AppDelegate.m b/ios/HelloWorld/AppDelegate.m
+index 220f82c..c4e1fa8 100644
+--- a/ios/HelloWorld/AppDelegate.m
++++ b/ios/HelloWorld/AppDelegate.m
+@@ -3,6 +3,13 @@
+ #import <React/RCTBridge.h>
+ #import <React/RCTBundleURLProvider.h>
+ #import <React/RCTRootView.h>
++#import <React/RCTLinkingManager.h>
++
++#import <UMCore/UMModuleRegistry.h>
++#import <UMReactNativeAdapter/UMNativeModulesProxy.h>
++#import <UMReactNativeAdapter/UMModuleRegistryAdapter.h>
++#import <EXSplashScreen/EXSplashScreenService.h>
++#import <UMCore/UMModuleRegistryProvider.h>
+ 
+ #ifdef FB_SONARKIT_ENABLED
+ #import <FlipperKit/FlipperClient.h>
+@@ -23,6 +30,13 @@ static void InitializeFlipper(UIApplication *application) {
+ }
+ #endif
+ 
++@interface AppDelegate () <RCTBridgeDelegate>
++
++@property (nonatomic, strong) UMModuleRegistryAdapter *moduleRegistryAdapter;
++@property (nonatomic, strong) NSDictionary *launchOptions;
++
++@end
++
+ @implementation AppDelegate
+ 
+ - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions
+@@ -31,19 +45,41 @@ static void InitializeFlipper(UIApplication *application) {
+   InitializeFlipper(application);
+ #endif
+ 
+-  RCTBridge *bridge = [[RCTBridge alloc] initWithDelegate:self launchOptions:launchOptions];
+-  RCTRootView *rootView = [[RCTRootView alloc] initWithBridge:bridge
+-                                                   moduleName:@"HelloWorld"
+-                                            initialProperties:nil];
++  self.moduleRegistryAdapter = [[UMModuleRegistryAdapter alloc] initWithModuleRegistryProvider:[[UMModuleRegistryProvider alloc] init]];
++  self.launchOptions = launchOptions;
++  self.window = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
++  #ifdef DEBUG
++    [self initializeReactNativeApp];
++  #else
++    EXUpdatesAppController *controller = [EXUpdatesAppController sharedInstance];
++    controller.delegate = self;
++    [controller startAndShowLaunchScreen:self.window];
++  #endif
++
++  [super application:application didFinishLaunchingWithOptions:launchOptions];
++
++  return YES;
++}
+ 
++- (RCTBridge *)initializeReactNativeApp
++{
++  RCTBridge *bridge = [[RCTBridge alloc] initWithDelegate:self launchOptions:self.launchOptions];
++  RCTRootView *rootView = [[RCTRootView alloc] initWithBridge:bridge moduleName:@"main" initialProperties:nil];
+   rootView.backgroundColor = [[UIColor alloc] initWithRed:1.0f green:1.0f blue:1.0f alpha:1];
+ 
+-  self.window = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
+   UIViewController *rootViewController = [UIViewController new];
+   rootViewController.view = rootView;
+   self.window.rootViewController = rootViewController;
+   [self.window makeKeyAndVisible];
+-  return YES;
++
++  return bridge;
++}
++
++- (NSArray<id<RCTBridgeModule>> *)extraModulesForBridge:(RCTBridge *)bridge
++{
++  NSArray<id<RCTBridgeModule>> *extraModules = [_moduleRegistryAdapter extraModulesForBridge:bridge];
++  // If you'd like to export some custom RCTBridgeModules that are not Expo modules, add them here!
++  return extraModules;
+ }
+ 
+ - (NSURL *)sourceURLForBridge:(RCTBridge *)bridge
+@@ -51,8 +87,26 @@ static void InitializeFlipper(UIApplication *application) {
+ #if DEBUG
+   return [[RCTBundleURLProvider sharedSettings] jsBundleURLForBundleRoot:@"index" fallbackResource:nil];
+ #else
+-  return [[NSBundle mainBundle] URLForResource:@"main" withExtension:@"jsbundle"];
++  return [[EXUpdatesAppController sharedInstance] launchAssetUrl];
+ #endif
+ }
+ 
++- (void)appController:(EXUpdatesAppController *)appController didStartWithSuccess:(BOOL)success {
++  appController.bridge = [self initializeReactNativeApp];
++  EXSplashScreenService *splashScreenService = (EXSplashScreenService *)[UMModuleRegistryProvider getSingletonModuleForClass:[EXSplashScreenService class]];
++  [splashScreenService showSplashScreenFor:self.window.rootViewController];
++}
++
++// Linking API
++- (BOOL)application:(UIApplication *)application openURL:(NSURL *)url options:(NSDictionary<UIApplicationOpenURLOptionsKey,id> *)options {
++  return [RCTLinkingManager application:application openURL:url options:options];
++}
++
++// Universal Links
++- (BOOL)application:(UIApplication *)application continueUserActivity:(nonnull NSUserActivity *)userActivity restorationHandler:(nonnull void (^)(NSArray<id<UIUserActivityRestoring>> * _Nullable))restorationHandler {
++  return [RCTLinkingManager application:application
++                   continueUserActivity:userActivity
++                     restorationHandler:restorationHandler];
++}
++
+ @end
+diff --git a/ios/HelloWorld/Images.xcassets/SplashScreen.imageset/Contents.json b/ios/HelloWorld/Images.xcassets/SplashScreen.imageset/Contents.json
+new file mode 100644
+index 0000000..e67cd6c
+--- /dev/null
++++ b/ios/HelloWorld/Images.xcassets/SplashScreen.imageset/Contents.json
+@@ -0,0 +1,21 @@
++{
++  "images": [
++    {
++      "idiom": "universal",
++      "filename": "splashscreen.png",
++      "scale": "1x"
++    },
++    {
++      "idiom": "universal",
++      "scale": "2x"
++    },
++    {
++      "idiom": "universal",
++      "scale": "3x"
++    }
++  ],
++  "info": {
++    "version": 1,
++    "author": "expo"
++  }
++}
+\ No newline at end of file
+diff --git a/ios/HelloWorld/Images.xcassets/SplashScreen.imageset/splashscreen.png b/ios/HelloWorld/Images.xcassets/SplashScreen.imageset/splashscreen.png
+new file mode 100644
+index 0000000..cc94f37
+Binary files /dev/null and b/ios/HelloWorld/Images.xcassets/SplashScreen.imageset/splashscreen.png differ
+diff --git a/ios/HelloWorld/Images.xcassets/SplashScreenBackground.imageset/Contents.json b/ios/HelloWorld/Images.xcassets/SplashScreenBackground.imageset/Contents.json
+new file mode 100644
+index 0000000..b5914aa
+--- /dev/null
++++ b/ios/HelloWorld/Images.xcassets/SplashScreenBackground.imageset/Contents.json
+@@ -0,0 +1,21 @@
++{
++  "images": [
++    {
++      "idiom": "universal",
++      "filename": "background.png",
++      "scale": "1x"
++    },
++    {
++      "idiom": "universal",
++      "scale": "2x"
++    },
++    {
++      "idiom": "universal",
++      "scale": "3x"
++    }
++  ],
++  "info": {
++    "version": 1,
++    "author": "expo"
++  }
++}
+\ No newline at end of file
+diff --git a/ios/HelloWorld/Images.xcassets/SplashScreenBackground.imageset/background.png b/ios/HelloWorld/Images.xcassets/SplashScreenBackground.imageset/background.png
+new file mode 100644
+index 0000000..ff3dd16
+Binary files /dev/null and b/ios/HelloWorld/Images.xcassets/SplashScreenBackground.imageset/background.png differ
+diff --git a/ios/HelloWorld/Info.plist b/ios/HelloWorld/Info.plist
+index 2417d8f..57f92ad 100644
+--- a/ios/HelloWorld/Info.plist
++++ b/ios/HelloWorld/Info.plist
+@@ -40,7 +40,7 @@
+ 	<key>NSLocationWhenInUseUsageDescription</key>
+ 	<string></string>
+ 	<key>UILaunchStoryboardName</key>
+-	<string>LaunchScreen</string>
++	<string>SplashScreen</string>
+ 	<key>UIRequiredDeviceCapabilities</key>
+ 	<array>
+ 		<string>armv7</string>
+diff --git a/ios/HelloWorld/SplashScreen.storyboard b/ios/HelloWorld/SplashScreen.storyboard
+new file mode 100644
+index 0000000..24eec3d
+--- /dev/null
++++ b/ios/HelloWorld/SplashScreen.storyboard
+@@ -0,0 +1,91 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<document
++  type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB"
++  version="3.0"
++  toolsVersion="16096"
++  targetRuntime="iOS.CocoaTouch"
++  propertyAccessControl="none"
++  useAutolayout="YES"
++  launchScreen="YES"
++  useTraitCollections="YES"
++  useSafeAreas="YES"
++  colorMatched="YES"
++  initialViewController="EXPO-VIEWCONTROLLER-1"
++>
++  <device id="retina5_5" orientation="portrait" appearance="light"/>
++  <dependencies>
++    <deployment identifier="iOS"/>
++    <plugIn identifier="com.apple.InterfaceBuilder.IBCocoaTouchPlugin" version="16087"/>
++    <capability name="Safe area layout guides" minToolsVersion="9.0"/>
++    <capability name="documents saved in the Xcode 8 format" minToolsVersion="8.0"/>
++  </dependencies>
++  <scenes>
++    <!--View Controller-->
++    <scene sceneID="EXPO-SCENE-1">
++      <objects>
++        <viewController
++          storyboardIdentifier="SplashScreenViewController"
++          id="EXPO-VIEWCONTROLLER-1"
++          sceneMemberID="viewController"
++        >
++          <view
++            key="view"
++            userInteractionEnabled="NO"
++            contentMode="scaleToFill"
++            insetsLayoutMarginsFromSafeArea="NO"
++            id="EXPO-ContainerView"
++            userLabel="ContainerView"
++          >
++            <rect key="frame" x="0.0" y="0.0" width="414" height="736"/>
++            <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMaxY="YES"/>
++            <subviews>
++              <imageView
++                userInteractionEnabled="NO"
++                contentMode="scaleAspectFill"
++                horizontalHuggingPriority="251"
++                verticalHuggingPriority="251"
++                insetsLayoutMarginsFromSafeArea="NO"
++                image="SplashScreenBackground"
++                translatesAutoresizingMaskIntoConstraints="NO"
++                id="EXPO-SplashScreenBackground"
++                userLabel="SplashScreenBackground"
++              >
++                <rect key="frame" x="0.0" y="0.0" width="414" height="736"/>
++              </imageView>
++              <imageView
++                clipsSubviews="YES"
++                userInteractionEnabled="NO"
++                contentMode="scaleAspectFit"
++                horizontalHuggingPriority="251"
++                verticalHuggingPriority="251"
++                translatesAutoresizingMaskIntoConstraints="NO"
++                image="SplashScreen"
++                id="EXPO-SplashScreen"
++                userLabel="SplashScreen"
++              >
++                <rect key="frame" x="0.0" y="0.0" width="414" height="736"/>
++              </imageView>
++            </subviews>
++            <constraints>
++              <constraint firstItem="EXPO-SplashScreenBackground" firstAttribute="top" secondItem="EXPO-ContainerView" secondAttribute="top" id="1gX-mQ-vu6"/>
++              <constraint firstItem="EXPO-SplashScreenBackground" firstAttribute="leading" secondItem="EXPO-ContainerView" secondAttribute="leading" id="6tX-OG-Sck"/>
++              <constraint firstItem="EXPO-SplashScreenBackground" firstAttribute="trailing" secondItem="EXPO-ContainerView" secondAttribute="trailing" id="ABX-8g-7v4"/>
++              <constraint firstItem="EXPO-SplashScreenBackground" firstAttribute="bottom" secondItem="EXPO-ContainerView" secondAttribute="bottom" id="jkI-2V-eW5"/>
++              <constraint firstItem="EXPO-SplashScreen" firstAttribute="top" secondItem="EXPO-ContainerView" secondAttribute="top" id="2VS-Uz-0LU"/>
++              <constraint firstItem="EXPO-SplashScreen" firstAttribute="leading" secondItem="EXPO-ContainerView" secondAttribute="leading" id="LhH-Ei-DKo"/>
++              <constraint firstItem="EXPO-SplashScreen" firstAttribute="trailing" secondItem="EXPO-ContainerView" secondAttribute="trailing" id="I6l-TP-6fn"/>
++              <constraint firstItem="EXPO-SplashScreen" firstAttribute="bottom" secondItem="EXPO-ContainerView" secondAttribute="bottom" id="nbp-HC-eaG"/>
++            </constraints>
++            <viewLayoutGuide key="safeArea" id="Rmq-lb-GrQ"/>
++          </view>
++        </viewController>
++        <placeholder placeholderIdentifier="IBFirstResponder" id="EXPO-PLACEHOLDER-1" userLabel="First Responder" sceneMemberID="firstResponder"/>
++      </objects>
++      <point key="canvasLocation" x="140.625" y="129.4921875"/>
++    </scene>
++  </scenes>
++  <resources>
++    <image name="SplashScreen" width="414" height="736"/>
++    <image name="SplashScreenBackground" width="1" height="1"/>
++  </resources>
++</document>
+diff --git a/ios/HelloWorld/Supporting/Expo.plist b/ios/HelloWorld/Supporting/Expo.plist
+new file mode 100644
+index 0000000..03410dc
+--- /dev/null
++++ b/ios/HelloWorld/Supporting/Expo.plist
+@@ -0,0 +1,10 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
++<plist version="1.0">
++<dict>
++        <key>EXUpdatesSDKVersion</key>
++        <string>YOUR-APP-SDK-VERSION-HERE</string>
++        <key>EXUpdatesURL</key>
++        <string>YOUR-APP-URL-HERE</string>
++</dict>
++</plist>
+diff --git a/metro.config.js b/metro.config.js
+index 13a9642..5981d0d 100644
+--- a/metro.config.js
++++ b/metro.config.js
+@@ -5,13 +5,7 @@
+  * @format
+  */
+ 
+-module.exports = {
+-  transformer: {
+-    getTransformOptions: async () => ({
+-      transform: {
+-        experimentalImportSupport: false,
+-        inlineRequires: false,
+-      },
+-    }),
+-  },
+-};
++// Learn more https://docs.expo.io/guides/customizing-metro
++const { getDefaultConfig } = require('expo/metro-config');
++
++module.exports = getDefaultConfig(__dirname);
+diff --git a/package.json b/package.json
+index 41fe1db..729b4d5 100644
+--- a/package.json
++++ b/package.json
+@@ -10,8 +10,13 @@
+     "lint": "eslint ."
+   },
+   "dependencies": {
++    "expo": "~42.0.0-alpha.0",
++    "expo-splash-screen": "~0.11.0",
++    "expo-status-bar": "~1.0.4",
++    "expo-updates": "~0.7.0",
+     "react": "16.13.1",
+-    "react-native": "0.63.4"
++    "react-native": "0.63.4",
++    "react-native-unimodules": "~0.14.1"
+   },
+   "devDependencies": {
+     "@babel/core": "^7.8.4",
